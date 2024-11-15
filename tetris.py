@@ -22,6 +22,9 @@ pygame.display.set_caption("Tetris")
 # Game clock
 clock = pygame.time.Clock()
 
+# Initialize the grid to track filled cells
+grid = [[0 for _ in range(columns)] for _ in range(rows)]
+
 # Draw the grid lines
 def draw_grid():
     for x in range(0, screen_width, cell_size):
@@ -69,7 +72,36 @@ class Tetronimo:
                                         cell_size, cell_size))
 
     def move_down(self):
-        self.y += 1
+        if not self.check_collision(0, 1): # Check if moving down is safe
+            self.y += 1
+        else:
+            self.add_to_grid()
+            return True # Indicates the piece is placed
+        return False
+    
+    def move_horizontal(self, dx):
+        if not self.check_collision(dx, 0): # Check horizontal collision
+            self.x += dx
+
+    def check_collision(self, dx, dy):
+        for row_index, row in enumerate(self.shape):
+            for col_index, cell in enumerate(row):
+                if cell:
+                    new_x = self.x + col_index + dx
+                    new_y = self.y + row_index + dy
+                    # Check boundries
+                    if new_x < 0 or new_x >= columns or new_y >= rows:
+                        return True
+                    #Check grid for existing blocks
+                    if grid[new_y][new_x]:
+                        return True
+        return False
+    
+    def add_to_grid(self):
+        for row_index, row in enumerate(self.shape):
+            for col_index, cell in enumerate(row):
+                if cell:
+                    grid[self.y + row_index][self.x + col_index] = self.color
 
 # Create the first piece
 current_piece = Tetronimo()
@@ -84,14 +116,34 @@ def main():
         screen.fill(BLACK)
         draw_grid()
 
+        # Draw the existing pieces on the grid
+        for y in range(rows):
+            for x in range(columns):
+                if grid[y][x]:
+                    pygame.draw.rect(screen, grid[y][x],
+                                    (x * cell_size, y * cell_size, cell_size, cell_size))
+
         # Move piece down in intervals
         current_time = pygame.time.get_ticks()
         if current_time - last_fall_time > fall_speed:
-            current_piece.move_down()
+            if current_piece.move_down():
+                current_piece = Tetronimo()
             last_fall_time = current_time # Reset fall timer
-        
+
         # Draw current piece
         current_piece.draw()
+
+        for event in pygame.event.get():
+            if event.type == pygame.QUIT:
+                pygame.quit()
+                sys.exit()
+            elif event.type == pygame.KEYDOWN:
+                if event.key == pygame.K_LEFT: # Move left
+                    current_piece.move_horizontal(-1)
+                elif event.key == pygame.K_RIGHT: # Move right
+                    current_piece.move_horizontal(1)
+                elif event.key == pygame.K_DOWN: # Soft drop
+                    current_piece.move_down()
 
         # Event handling
         for event in pygame.event.get():
