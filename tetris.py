@@ -25,6 +25,20 @@ clock = pygame.time.Clock()
 # Initialize the grid to track filled cells
 grid = [[0 for _ in range(columns)] for _ in range(rows)]
 
+score = 0
+
+def clear_lines():
+    global grid
+    cleared_lines = 0
+    # Iterate from the bottom up
+    for y in range(rows -1, -1, -1):
+        if all(grid[y]): # Check if row is full
+            del grid[y] # Remove the full row
+            grid.insert(0, [0 for _ in range(columns)]) # Add an empty row at the top
+            cleared_lines += 1
+    return cleared_lines
+
+
 # Draw the grid lines
 def draw_grid():
     for x in range(0, screen_width, cell_size):
@@ -98,10 +112,13 @@ class Tetronimo:
         return False
     
     def add_to_grid(self):
+        global score
         for row_index, row in enumerate(self.shape):
             for col_index, cell in enumerate(row):
                 if cell:
                     grid[self.y + row_index][self.x + col_index] = self.color
+            # Clear lines and update score
+            score += clear_lines() * 10
 
 # Create the first piece
 current_piece = Tetronimo()
@@ -122,6 +139,11 @@ def main():
                 if grid[y][x]:
                     pygame.draw.rect(screen, grid[y][x],
                                     (x * cell_size, y * cell_size, cell_size, cell_size))
+                    
+        # Display the score
+        font = pygame.font.Font(None, 36)
+        score_text = font.render(f"Score: {score}", True, WHITE)
+        screen.blit(score_text, (10, 10))
 
         # Move piece down in intervals
         current_time = pygame.time.get_ticks()
