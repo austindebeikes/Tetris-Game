@@ -27,6 +27,21 @@ grid = [[0 for _ in range(columns)] for _ in range(rows)]
 
 score = 0
 
+def show_game_over():
+    font = pygame.font.Font(None, 36)
+    game_over_text = font.render("GAME OVER", True, WHITE)
+    screen.blit(game_over_text, (screen_width // 2 - game_over_text.get_width() // 2, screen_height // 3))
+
+    restart_text = font.render("Press 'R' to Restart", True, WHITE)
+    screen.blit(restart_text, (screen_width // 2 - restart_text.get_width() // 2, screen_height // 2))
+
+    pygame.display.flip()
+
+def reset_game():
+    global grid, score
+    grid = [[0 for _ in range(columns)] for _ in range(rows)]
+    score = 0
+
 def clear_lines():
     global grid
     cleared_lines = 0
@@ -86,16 +101,27 @@ class Tetronimo:
                                         cell_size, cell_size))
 
     def move_down(self):
-        if not self.check_collision(0, 1): # Check if moving down is safe
-            self.y += 1
-        else:
+        self.y += 1
+        if not self.valid_position():
+            self.y -= 1
             self.add_to_grid()
             return True # Indicates the piece is placed
         return False
     
-    def move_horizontal(self, dx):
-        if not self.check_collision(dx, 0): # Check horizontal collision
-            self.x += dx
+    def move_horizontal(self, direction):
+        self.x += direction
+        if not self.valid_position():
+            self.x -= direction
+
+    def valid_position(self):
+        for row_index, row in enumerate(self.shape):
+            for col_index, cell in enumerate(row):
+                if cell:
+                    x = self.x + col_index
+                    y =self.y + row_index
+                    if x < 0 or x >= columns or y >= rows or grid[y][x]:
+                        return False
+        return True
 
     def check_collision(self, dx, dy):
         for row_index, row in enumerate(self.shape):
@@ -125,53 +151,69 @@ current_piece = Tetronimo()
 
 # Main game loop
 def main():
-    global current_piece
+    global current_piece, score
     fall_speed = 500
     last_fall_time = pygame.time.get_ticks()
+    game_over = False
 
     while True:
         screen.fill(BLACK)
         draw_grid()
 
-        # Draw the existing pieces on the grid
-        for y in range(rows):
-            for x in range(columns):
-                if grid[y][x]:
-                    pygame.draw.rect(screen, grid[y][x],
-                                    (x * cell_size, y * cell_size, cell_size, cell_size))
-                    
-        # Display the score
-        font = pygame.font.Font(None, 36)
-        score_text = font.render(f"Score: {score}", True, WHITE)
-        screen.blit(score_text, (10, 10))
+        if game_over:
+            show_game_over()
+            for event in pygame.event.get():
+                if event.type == pygame.QUIT:
+                    pygame.quit()
+                    sys.exit()
+                elif event.type == pygame.KEYDOWN:
+                    if event.key == pygame.K_r:
+                        reset_game()
+                        game_over = False
+                        current_piece = Tetronimo()
+                        score = 0
+        else:
+            # Move piece down in intervals
+            current_time = pygame.time.get_ticks()
+            if current_time - last_fall_time > fall_speed:
+                if current_piece.move_down():
+                    current_piece = Tetronimo()
+                    if not current_piece.valid_position():
+                        game_over = True
+                last_fall_time = current_time # Reset fall timer
 
-        # Move piece down in intervals
-        current_time = pygame.time.get_ticks()
-        if current_time - last_fall_time > fall_speed:
-            if current_piece.move_down():
-                current_piece = Tetronimo()
-            last_fall_time = current_time # Reset fall timer
+            # Draw current piece
+            current_piece.draw()
 
-        # Draw current piece
-        current_piece.draw()
+            for event in pygame.event.get():
+                if event.type == pygame.QUIT:
+                    pygame.quit()
+                    sys.exit()
+                elif event.type == pygame.KEYDOWN:
+                    if event.key == pygame.K_LEFT: # Move left
+                        current_piece.move_horizontal(-1)
+                    elif event.key == pygame.K_RIGHT: # Move right
+                        current_piece.move_horizontal(1)
+                    elif event.key == pygame.K_DOWN: # Soft drop
+                        current_piece.move_down()
 
-        for event in pygame.event.get():
-            if event.type == pygame.QUIT:
-                pygame.quit()
-                sys.exit()
-            elif event.type == pygame.KEYDOWN:
-                if event.key == pygame.K_LEFT: # Move left
-                    current_piece.move_horizontal(-1)
-                elif event.key == pygame.K_RIGHT: # Move right
-                    current_piece.move_horizontal(1)
-                elif event.key == pygame.K_DOWN: # Soft drop
-                    current_piece.move_down()
+            # Event handling
+            for event in pygame.event.get():
+                if event.type == pygame.QUIT:
+                    pygame.quit()
+                    sys.exit()
 
-        # Event handling
-        for event in pygame.event.get():
-            if event.type == pygame.QUIT:
-                pygame.quit()
-                sys.exit()
+            # Draw the existing pieces on the grid
+            for y in range(rows):
+                for x in range(columns):
+                    if grid[y][x]:
+                        pygame.draw.rect(screen, grid[y][x],
+                                        (x * cell_size, y * cell_size, cell_size, cell_size))
+
+            # Display the score
+            font = pygame.font.Font(None, 36)
+            score_text = font.render(f"Score: {score}", True, WHITE)
+            screen.blit(score_text, (10, 10))
 
         pygame.display.flip() # Update the display
         clock.tick(60) # 60 frames per second
