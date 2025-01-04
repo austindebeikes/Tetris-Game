@@ -1,222 +1,245 @@
 import pygame
-import sys
 import random
+import math
 
 # Initialize Pygame
 pygame.init()
 
-# Game Constants
-screen_width, screen_height = 300, 600 # Standard Tetris screen
-cell_size = 30 # Each cell is 30x30 pixels
-columns, rows = 10, 20 # Tetris grid size
+# Constants
+SCREEN_WIDTH = 400
+SCREEN_HEIGHT = 600
+GRID_SIZE = 30
+GRID_WIDTH = SCREEN_WIDTH // GRID_SIZE
+GRID_HEIGHT = SCREEN_HEIGHT // GRID_SIZE
 
 # Colors
 BLACK = (0, 0, 0)
 WHITE = (255, 255, 255)
-GRID_COLOR = (50, 50, 50)
+RED = (255, 0, 0)
+BLUE = (0, 0, 255)
+GREEN = (0, 255, 0)
+YELLOW = (255, 255, 0)
 
-# Initialize the screen
-screen = pygame.display.set_mode((screen_width, screen_height))
-pygame.display.set_caption("Tetris")
+COLORS = [RED, BLUE, GREEN, YELLOW]
 
-# Game clock
+# Initialize screen
+screen = pygame.display.set_mode((SCREEN_WIDTH, SCREEN_HEIGHT))
+pygame.display.set_caption("Color Match Shooter")
 clock = pygame.time.Clock()
 
-# Initialize the grid to track filled cells
-grid = [[0 for _ in range(columns)] for _ in range(rows)]
-
-score = 0
-
-def show_game_over():
-    font = pygame.font.Font(None, 36)
-    game_over_text = font.render("GAME OVER", True, WHITE)
-    screen.blit(game_over_text, (screen_width // 2 - game_over_text.get_width() // 2, screen_height // 3))
-
-    restart_text = font.render("Press 'R' to Restart", True, WHITE)
-    screen.blit(restart_text, (screen_width // 2 - restart_text.get_width() // 2, screen_height // 2))
-
-    pygame.display.flip()
-
-def reset_game():
-    global grid, score
-    grid = [[0 for _ in range(columns)] for _ in range(rows)]
-    score = 0
-
-def clear_lines():
-    global grid
-    cleared_lines = 0
-    # Iterate from the bottom up
-    for y in range(rows -1, -1, -1):
-        if all(grid[y]): # Check if row is full
-            del grid[y] # Remove the full row
-            grid.insert(0, [0 for _ in range(columns)]) # Add an empty row at the top
-            cleared_lines += 1
-    return cleared_lines
-
-
-# Draw the grid lines
-def draw_grid():
-    for x in range(0, screen_width, cell_size):
-        pygame.draw.line(screen, GRID_COLOR, (x, 0), (x, screen_height))
-    for y in range(0, screen_height, cell_size):
-        pygame.draw.line(screen, GRID_COLOR, (0, y), (screen_width, y))
-
-# Define shapes ande their rotations as 4x4 matrices
-shapes = [
-    [[1, 1, 1, 1]],  # I shape
-    [[1, 1], [1, 1]],  # O shape
-    [[0, 1, 0], [1, 1, 1]],  # T shape
-    [[1, 0, 0], [1, 1, 1]],  # L shape
-    [[0, 0, 1], [1, 1, 1]],  # J shape
-    [[1, 1, 0], [0, 1, 1]],  # S shape
-    [[0, 1, 1], [1, 1, 0]]   # Z shape
-]
-
-# Colors for each shape
-colors = [
-    (0, 255, 255),  # Cyan (I)
-    (255, 255, 0),  # Yellow (O)
-    (128, 0, 128),  # Purple (T)
-    (255, 165, 0),  # Orange (L)
-    (0, 0, 255),    # Blue (J)
-    (0, 255, 0),    # Green (S)
-    (255, 0, 0)     # Red (Z)
-]
-
-#Tetronimo class
-class Tetronimo:
+class Player(pygame.sprite.Sprite):
     def __init__(self):
-        self.shape = random.choice(shapes)
-        self.color = colors[shapes.index(self.shape)]
-        self.x = columns // 2 - len(self.shape[0]) // 2
-        self.y = 0
+        super().__init__()
+        self.image = pygame.Surface((30, 30))
+        self.image.fill(WHITE)
+        pygame.draw.polygon(self.image, GREEN, [(15, 0), (0, 30), (30, 30)])
+        self.rect = self.image.get_rect()
+        self.rect.centerx = SCREEN_WIDTH // 2
+        self.rect.bottom = SCREEN_HEIGHT - 10
+        self.speed = 5
+        
+    def update(self):
+        keys = pygame.key.get_pressed()
+        if keys[pygame.K_LEFT] and self.rect.left > 0:
+            self.rect.x -= self.speed
+        if keys[pygame.K_RIGHT] and self.rect.right < SCREEN_WIDTH:
+            self.rect.x += self.speed
 
+class Bullet(pygame.sprite.Sprite):
+    def __init__(self, x, y):
+        super().__init__()
+        self.image = pygame.Surface((4, 10))
+        self.image.fill(WHITE)
+        self.rect = self.image.get_rect()
+        self.rect.centerx = x
+        self.rect.bottom = y
+        self.speed = 7
+        
+    def update(self):
+        self.rect.y -= self.speed
+        if self.rect.bottom < 0:
+            self.kill()
+
+class Enemy(pygame.sprite.Sprite):
+    def __init__(self, x):
+        super().__init__()
+        self.image = pygame.Surface((GRID_SIZE - 2, GRID_SIZE - 2))
+        self.color = random.choice(COLORS)
+        self.image.fill(self.color)
+        self.rect = self.image.get_rect()
+        self.rect.x = x
+        self.rect.y = -GRID_SIZE
+        self.speed = 2
+        self.move_phase = random.random() * 2 * math.pi  # Random starting phase
+        
+    def update(self):
+        # Sinusoidal movement
+        self.rect.x += math.sin(pygame.time.get_ticks() * 0.002 + self.move_phase) * 2
+        self.rect.x = max(0, min(self.rect.x, SCREEN_WIDTH - GRID_SIZE))
+        self.rect.y += self.speed
+
+class Game:
+    def __init__(self):
+        self.player = Player()
+        self.all_sprites = pygame.sprite.Group(self.player)
+        self.bullets = pygame.sprite.Group()
+        self.enemies = pygame.sprite.Group()
+        self.blocks = [[0 for _ in range(GRID_WIDTH)] for _ in range(GRID_HEIGHT)]
+        self.score = 0
+        self.game_over = False
+        self.enemy_spawn_timer = 0
+        
+    def spawn_enemy(self):
+        grid_x = random.randrange(GRID_WIDTH)
+        x = grid_x * GRID_SIZE
+        enemy = Enemy(x)
+        self.enemies.add(enemy)
+        self.all_sprites.add(enemy)
+        
+    def try_shift_blocks(self, grid_x, grid_y, direction):
+        if not (0 <= grid_y < GRID_HEIGHT):
+            return
+        
+        # Try to shift blocks in the given direction
+        if direction < 0:  # Shift left
+            if grid_x > 0 and self.blocks[grid_y][grid_x - 1] == 0:
+                self.blocks[grid_y][grid_x - 1] = self.blocks[grid_y][grid_x]
+                self.blocks[grid_y][grid_x] = 0
+        elif direction > 0:  # Shift right
+            if grid_x < GRID_WIDTH - 1 and self.blocks[grid_y][grid_x + 1] == 0:
+                self.blocks[grid_y][grid_x + 1] = self.blocks[grid_y][grid_x]
+                self.blocks[grid_y][grid_x] = 0
+
+    def add_block(self, enemy, bullet):
+        grid_x = enemy.rect.x // GRID_SIZE
+        grid_y = enemy.rect.y // GRID_SIZE
+        
+        # Determine shift direction based on hit position
+        hit_pos = bullet.rect.centerx
+        enemy_center = enemy.rect.centerx
+        shift_direction = -1 if hit_pos < enemy_center else 1
+        
+        if 0 <= grid_x < GRID_WIDTH and 0 <= grid_y < GRID_HEIGHT:
+            self.blocks[grid_y][grid_x] = enemy.color
+            self.try_shift_blocks(grid_x, grid_y, shift_direction)
+            
+    def clear_lines(self):
+        lines_cleared = 0
+        y = GRID_HEIGHT - 1
+        while y >= 0:
+            # Check if line is full and all same color
+            if all(self.blocks[y]):
+                first_color = self.blocks[y][0]
+                if all(color == first_color for color in self.blocks[y]):
+                    lines_cleared += 1
+                    # Remove the line
+                    del self.blocks[y]
+                    # Add new empty line at top
+                    self.blocks.insert(0, [0 for _ in range(GRID_WIDTH)])
+                else:
+                    y -= 1
+            else:
+                y -= 1
+        return lines_cleared
+    
+    def apply_gravity(self):
+        for x in range(GRID_WIDTH):
+            for y in range(GRID_HEIGHT-2, -1, -1):
+                if self.blocks[y][x] and not self.blocks[y+1][x]:
+                    self.blocks[y+1][x] = self.blocks[y][x]
+                    self.blocks[y][x] = 0
+        
+    def check_game_over(self):
+        return any(self.blocks[0])
+        
+    def update(self):
+        if not self.game_over:
+            self.all_sprites.update()
+            
+            # Spawn enemies
+            self.enemy_spawn_timer += 1
+            if self.enemy_spawn_timer >= 45:  # Faster spawn rate
+                self.spawn_enemy()
+                self.enemy_spawn_timer = 0
+                
+            # Check bullet collisions
+            hits = pygame.sprite.groupcollide(self.bullets, self.enemies, True, False)
+            for bullet, enemies_hit in hits.items():
+                for enemy in enemies_hit:
+                    self.add_block(enemy, bullet)
+                    enemy.kill()
+                    self.score += 50
+            
+            # Check enemies reaching bottom
+            for enemy in list(self.enemies):
+                if enemy.rect.bottom >= SCREEN_HEIGHT - GRID_SIZE:
+                    grid_y = (enemy.rect.y + GRID_SIZE - 1) // GRID_SIZE - 1
+                    if 0 <= grid_y < GRID_HEIGHT:
+                        self.add_block(enemy, None)
+                    enemy.kill()
+            
+            # Apply gravity and clear lines
+            self.apply_gravity()
+            lines_cleared = self.clear_lines()
+            self.score += lines_cleared * 1000  # More points for color matches
+            
+            # Check game over
+            if self.check_game_over():
+                self.game_over = True
+                
     def draw(self):
-        for row_index, row in enumerate(self.shape):
-            for col_index, cell in enumerate(row):
-                if cell:
-                    pygame.draw.rect(screen, self.color,
-                                        (self.x * cell_size + col_index * cell_size,
-                                        self.y * cell_size + row_index * cell_size,
-                                        cell_size, cell_size))
-
-    def move_down(self):
-        self.y += 1
-        if not self.valid_position():
-            self.y -= 1
-            self.add_to_grid()
-            return True # Indicates the piece is placed
-        return False
-    
-    def move_horizontal(self, direction):
-        self.x += direction
-        if not self.valid_position():
-            self.x -= direction
-
-    def valid_position(self):
-        for row_index, row in enumerate(self.shape):
-            for col_index, cell in enumerate(row):
-                if cell:
-                    x = self.x + col_index
-                    y =self.y + row_index
-                    if x < 0 or x >= columns or y >= rows or grid[y][x]:
-                        return False
-        return True
-
-    def check_collision(self, dx, dy):
-        for row_index, row in enumerate(self.shape):
-            for col_index, cell in enumerate(row):
-                if cell:
-                    new_x = self.x + col_index + dx
-                    new_y = self.y + row_index + dy
-                    # Check boundries
-                    if new_x < 0 or new_x >= columns or new_y >= rows:
-                        return True
-                    #Check grid for existing blocks
-                    if grid[new_y][new_x]:
-                        return True
-        return False
-    
-    def add_to_grid(self):
-        global score
-        for row_index, row in enumerate(self.shape):
-            for col_index, cell in enumerate(row):
-                if cell:
-                    grid[self.y + row_index][self.x + col_index] = self.color
-            # Clear lines and update score
-            score += clear_lines() * 10
-
-# Create the first piece
-current_piece = Tetronimo()
-
-# Main game loop
-def main():
-    global current_piece, score
-    fall_speed = 500
-    last_fall_time = pygame.time.get_ticks()
-    game_over = False
-
-    while True:
         screen.fill(BLACK)
-        draw_grid()
+        
+        # Draw grid
+        for x in range(0, SCREEN_WIDTH, GRID_SIZE):
+            pygame.draw.line(screen, (30, 30, 30), (x, 0), (x, SCREEN_HEIGHT))
+        for y in range(0, SCREEN_HEIGHT, GRID_SIZE):
+            pygame.draw.line(screen, (30, 30, 30), (0, y), (SCREEN_WIDTH, y))
+            
+        # Draw placed blocks
+        for y in range(GRID_HEIGHT):
+            for x in range(GRID_WIDTH):
+                if self.blocks[y][x]:
+                    pygame.draw.rect(screen, self.blocks[y][x],
+                                   (x * GRID_SIZE, y * GRID_SIZE,
+                                    GRID_SIZE - 2, GRID_SIZE - 2))
+                    
+        self.all_sprites.draw(screen)
+        
+        # Draw score
+        font = pygame.font.Font(None, 36)
+        score_text = font.render(f'Score: {self.score}', True, WHITE)
+        screen.blit(score_text, (10, 10))
+        
+        if self.game_over:
+            game_over_text = font.render('GAME OVER - Press R to Restart', True, WHITE)
+            screen.blit(game_over_text,
+                       (SCREEN_WIDTH//2 - game_over_text.get_width()//2,
+                        SCREEN_HEIGHT//2))
 
-        if game_over:
-            show_game_over()
-            for event in pygame.event.get():
-                if event.type == pygame.QUIT:
-                    pygame.quit()
-                    sys.exit()
-                elif event.type == pygame.KEYDOWN:
-                    if event.key == pygame.K_r:
-                        reset_game()
-                        game_over = False
-                        current_piece = Tetronimo()
-                        score = 0
-        else:
-            # Move piece down in intervals
-            current_time = pygame.time.get_ticks()
-            if current_time - last_fall_time > fall_speed:
-                if current_piece.move_down():
-                    current_piece = Tetronimo()
-                    if not current_piece.valid_position():
-                        game_over = True
-                last_fall_time = current_time # Reset fall timer
+def main():
+    game = Game()
+    running = True
+    
+    while running:
+        clock.tick(60)
+        
+        for event in pygame.event.get():
+            if event.type == pygame.QUIT:
+                running = False
+            elif event.type == pygame.KEYDOWN:
+                if event.key == pygame.K_SPACE and not game.game_over:
+                    bullet = Bullet(game.player.rect.centerx, game.player.rect.top)
+                    game.bullets.add(bullet)
+                    game.all_sprites.add(bullet)
+                elif event.key == pygame.K_r and game.game_over:
+                    game = Game()
+        
+        game.update()
+        game.draw()
+        pygame.display.flip()
+        
+    pygame.quit()
 
-            # Draw current piece
-            current_piece.draw()
-
-            for event in pygame.event.get():
-                if event.type == pygame.QUIT:
-                    pygame.quit()
-                    sys.exit()
-                elif event.type == pygame.KEYDOWN:
-                    if event.key == pygame.K_LEFT: # Move left
-                        current_piece.move_horizontal(-1)
-                    elif event.key == pygame.K_RIGHT: # Move right
-                        current_piece.move_horizontal(1)
-                    elif event.key == pygame.K_DOWN: # Soft drop
-                        current_piece.move_down()
-
-            # Event handling
-            for event in pygame.event.get():
-                if event.type == pygame.QUIT:
-                    pygame.quit()
-                    sys.exit()
-
-            # Draw the existing pieces on the grid
-            for y in range(rows):
-                for x in range(columns):
-                    if grid[y][x]:
-                        pygame.draw.rect(screen, grid[y][x],
-                                        (x * cell_size, y * cell_size, cell_size, cell_size))
-
-            # Display the score
-            font = pygame.font.Font(None, 36)
-            score_text = font.render(f"Score: {score}", True, WHITE)
-            screen.blit(score_text, (10, 10))
-
-        pygame.display.flip() # Update the display
-        clock.tick(60) # 60 frames per second
-
-# Run game
-main()
+if __name__ == "__main__":
+    main()
