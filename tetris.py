@@ -1,6 +1,7 @@
 import pygame
 import random
 import sys
+import copy
 
 # Initialize Pygame
 pygame.init()
@@ -18,7 +19,23 @@ TETRIS_ROWS = SCREEN_HEIGHT // GRID_SIZE
 BLACK = (0, 0, 0)
 WHITE = (255, 255, 255)
 BLUE = (0, 100, 255)
-RED = (255, 50, 50)
+
+# Tetromino Shapes
+SHAPES = [
+    [[1, 1, 1, 1]],  # I
+    [[1, 1], 
+     [1, 1]],  # O
+    [[0, 1, 0], 
+     [1, 1, 1]],  # T
+    [[1, 0, 0], 
+     [1, 1, 1]],  # L
+    [[0, 0, 1], 
+     [1, 1, 1]],  # J
+    [[1, 1, 0], 
+     [0, 1, 1]],  # S
+    [[0, 1, 1], 
+     [1, 1, 0]]   # Z
+]
 
 class Player(pygame.sprite.Sprite):
     def __init__(self):
@@ -52,24 +69,63 @@ class Bullet(pygame.sprite.Sprite):
         if self.rect.bottom < 0:
             self.kill()
 
-class Block(pygame.sprite.Sprite):
+class Tetromino(pygame.sprite.Sprite):
     def __init__(self, x):
         super().__init__()
-        self.is_red = random.choice([True, False])  # Randomly choose block type
-        self.image = pygame.Surface((GRID_SIZE - 2, GRID_SIZE - 2))
-        self.image.fill(RED if self.is_red else BLUE)
+        self.shape_index = random.randrange(len(SHAPES))
+        self.shape = copy.deepcopy(SHAPES[self.shape_index])
+        self.width = len(self.shape[0]) * GRID_SIZE
+        self.height = len(self.shape) * GRID_SIZE
+        
+        self.image = pygame.Surface((self.width, self.height), pygame.SRCALPHA)
+        self.draw_shape()
+        
         self.rect = self.image.get_rect()
         self.rect.x = x
-        self.rect.y = -GRID_SIZE
+        self.rect.y = -self.height
         self.speed = 2
+
+    def draw_shape(self):
+        self.image.fill((0, 0, 0, 0))
+        for y, row in enumerate(self.shape):
+            for x, cell in enumerate(row):
+                if cell:
+                    pygame.draw.rect(self.image, BLUE,
+                                   (x * GRID_SIZE, y * GRID_SIZE,
+                                    GRID_SIZE - 1, GRID_SIZE - 1))
+    
+    def check_collision(self, point):
+        local_x = point[0] - self.rect.x
+        local_y = point[1] - self.rect.y
         
+        grid_x = local_x // GRID_SIZE
+        grid_y = local_y // GRID_SIZE
+        
+        if 0 <= grid_y < len(self.shape) and 0 <= grid_x < len(self.shape[0]):
+            return self.shape[grid_y][grid_x] == 1
+        return False
+
+    def remove_block(self, point):
+        local_x = (point[0] - self.rect.x) // GRID_SIZE
+        local_y = (point[1] - self.rect.y) // GRID_SIZE
+        
+        if 0 <= local_y < len(self.shape) and 0 <= local_x < len(self.shape[0]):
+            if self.shape[local_y][local_x] == 1:
+                self.shape[local_y][local_x] = 0
+                self.draw_shape()
+                return True
+        return False
+
+    def has_blocks(self):
+        return any(any(row) for row in self.shape)
+    
     def update(self):
         self.rect.y += self.speed
 
 class Game:
     def __init__(self):
         self.screen = pygame.display.set_mode((SCREEN_WIDTH, SCREEN_HEIGHT))
-        pygame.display.set_caption("Block Shooter")
+        pygame.display.set_caption("Tetris Shooter")
         self.clock = pygame.time.Clock()
         
         self.player = Player()
@@ -101,20 +157,37 @@ class Game:
             self.draw()
             pygame.display.flip()
 
-    def spawn_block(self):
-        x = random.randrange(TETRIS_WIDTH + GRID_SIZE, SCREEN_WIDTH - GRID_SIZE)
-        block = Block(x)
-        self.falling_blocks.add(block)
-        self.all_sprites.add(block)
+    def spawn_tetromino(self):
+        x = random.randrange(TETRIS_WIDTH + GRID_SIZE, SCREEN_WIDTH - 4 * GRID_SIZE)
+        tetromino = Tetromino(x)
+        self.falling_blocks.add(tetromino)
+        self.all_sprites.add(tetromino)
 
-    def add_to_tetris(self, block):
-        # Find first available position from bottom-left
-        for y in range(TETRIS_ROWS - 1, -1, -1):
-            for x in range(TETRIS_COLS):
-                if self.tetris_grid[y][x] == 0:
-                    self.tetris_grid[y][x] = BLUE if not block.is_red else RED
-                    return True
+    def add_to_tetris(self, tetromino):
+        shape_height = len(tetromino.shape)
+        shape_width = len(tetromino.shape[0])
         
+        # Find first position from bottom that can fit the shape
+        for base_y in range(TETRIS_ROWS - shape_height, -1, -1):
+            for base_x in range(TETRIS_COLS - shape_width + 1):
+                # Check if this position can fit the shape
+                can_fit = True
+                for y in range(shape_height):
+                    for x in range(shape_width):
+                        if tetromino.shape[y][x] and self.tetris_grid[base_y + y][base_x + x]:
+                            can_fit = False
+                            break
+                    if not can_fit:
+                        break
+                
+                if can_fit:
+                    # Place the shape exactly as it is
+                    for y in range(shape_height):
+                        for x in range(shape_width):
+                            if tetromino.shape[y][x]:
+                                self.tetris_grid[base_y + y][base_x + x] = BLUE
+                    return True
+                    
         self.game_over = True
         return False
 
@@ -122,28 +195,39 @@ class Game:
         if not self.game_over:
             self.all_sprites.update()
             
-            # Check for bullet collisions with red blocks
-            hits = pygame.sprite.groupcollide(self.bullets, self.falling_blocks, True, False)
-            for bullet, blocks in hits.items():
-                for block in blocks:
-                    if block.is_red:  # Only destroy red blocks with bullets
-                        block.kill()
-                        self.score += 100
+            # Check for bullet collisions
+            for bullet in list(self.bullets):
+                hit = False
+                for tetromino in list(self.falling_blocks):
+                    if tetromino.check_collision((bullet.rect.centerx, bullet.rect.centery)):
+                        tetromino.remove_block((bullet.rect.centerx, bullet.rect.centery))
+                        bullet.kill()
+                        hit = True
+                        self.score += 50
+                        
+                        # Remove tetromino if all blocks are gone
+                        if not tetromino.has_blocks():
+                            tetromino.kill()
+                        break
             
-            # Check for player collisions with blue blocks
-            for block in list(self.falling_blocks):
-                if not block.is_red and pygame.sprite.collide_rect(self.player, block):
-                    self.add_to_tetris(block)
-                    block.kill()
-                    self.score += 200
-                elif block.rect.bottom >= SCREEN_HEIGHT:  # Block hits bottom
-                    self.game_over = True
+            # Check for player collisions with tetrominos
+            for tetromino in list(self.falling_blocks):
+                if pygame.sprite.collide_rect(self.player, tetromino):
+                    if tetromino.has_blocks():  # Only catch if it still has blocks
+                        self.add_to_tetris(tetromino)
+                        tetromino.kill()
+                        self.score += 200
+                elif tetromino.rect.top > SCREEN_HEIGHT:  # Tetromino hits bottom
+                    if tetromino.has_blocks():  # Only game over if it has blocks
+                        self.game_over = True
+                    else:
+                        tetromino.kill()
                     break
 
-            # Spawn new blocks
+            # Spawn new tetrominos
             self.spawn_timer += 1
-            if self.spawn_timer >= 60:  # Spawn every second
-                self.spawn_block()
+            if self.spawn_timer >= 90:  # Spawn rate
+                self.spawn_tetromino()
                 self.spawn_timer = 0
     
     def draw(self):
