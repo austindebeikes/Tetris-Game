@@ -146,3 +146,205 @@ class Tetromino(pygame.sprite.Sprite):
     
     def update(self):
         self.rect.y += self.speed
+
+class Game:
+    def __init__(self):
+        self.screen = pygame.display.set_mode((SCREEN_WIDTH, SCREEN_HEIGHT))
+        pygame.display.set_caption("Block Puzzle Shooter")
+        self.clock = pygame.time.Clock()
+        
+        self.player = Player()
+        self.all_sprites = pygame.sprite.Group(self.player)
+        self.bullets = pygame.sprite.Group()
+        self.falling_blocks = pygame.sprite.Group()
+        self.tetris_grid = copy.deepcopy(DISPLAY_GRID)
+        self.target_pattern = copy.deepcopy(TARGET_PATTERN)
+        self.game_over = False
+        self.spawn_timer = 0
+        self.score = 0
+        self.matches = 0
+        self.total_targets = sum(sum(row) for row in TARGET_PATTERN)
+
+    def run(self):
+        running = True
+        while running:
+            self.clock.tick(60)
+            
+            for event in pygame.event.get():
+                if event.type == pygame.QUIT:
+                    running = False
+                elif event.type == pygame.KEYDOWN:
+                    if event.key == pygame.K_SPACE and not self.game_over:
+                        bullet = Bullet(self.player.rect.centerx, self.player.rect.top)
+                        self.bullets.add(bullet)
+                        self.all_sprites.add(bullet)
+                    elif event.key == pygame.K_r and self.game_over:
+                        self.__init__()
+            
+            self.update()
+            self.draw()
+            pygame.display.flip()
+
+    def spawn_tetromino(self):
+        try:
+            x = random.randrange(TETRIS_WIDTH + GRID_SIZE, SCREEN_WIDTH - 4 * GRID_SIZE)
+            tetromino = Tetromino(x)
+            self.falling_blocks.add(tetromino)
+            self.all_sprites.add(tetromino)
+        except ValueError:
+            print("Error spawning tetromino: Invalid position calculated")
+
+    def add_to_tetris(self, tetromino):
+        try:
+            shape_height = len(tetromino.shape)
+            shape_width = len(tetromino.shape[0])
+            
+            if shape_width > TETRIS_COLS or shape_height > TETRIS_ROWS:
+                return False
+            
+            # Find empty space from bottom up
+            for base_y in range(TETRIS_ROWS - shape_height, -1, -1):
+                for base_x in range(TETRIS_COLS - shape_width + 1):
+                    if self.can_place_tetromino(tetromino, base_x, base_y):
+                        self.place_tetromino(tetromino, base_x, base_y)
+                        return True
+            
+            return False
+        except Exception as e:
+            print(f"Error in add_to_tetris: {e}")
+            return False
+
+    def can_place_tetromino(self, tetromino, base_x, base_y):
+        try:
+            shape_height = len(tetromino.shape)
+            shape_width = len(tetromino.shape[0])
+            
+            for y in range(shape_height):
+                for x in range(shape_width):
+                    if tetromino.shape[y][x]:
+                        if (base_y + y >= TETRIS_ROWS or 
+                            base_x + x >= TETRIS_COLS or 
+                            self.tetris_grid[base_y + y][base_x + x]):
+                            return False
+            return True
+        except IndexError:
+            return False
+
+    def place_tetromino(self, tetromino, base_x, base_y):
+        try:
+            shape_height = len(tetromino.shape)
+            shape_width = len(tetromino.shape[0])
+            matches = 0
+            
+            for y in range(shape_height):
+                for x in range(shape_width):
+                    if tetromino.shape[y][x]:
+                        self.tetris_grid[base_y + y][base_x + x] = BLUE
+                        if self.target_pattern[base_y + y][base_x + x]:
+                            matches += 1
+                            self.matches += 1
+            
+            if matches > 0:
+                self.score += matches * 500
+                self.score += 1000  # Bonus for any match
+                
+            if self.matches >= self.total_targets:
+                self.score += 5000  # Completion bonus
+        except IndexError:
+            print("Error placing tetromino: Index out of range")
+
+    def update(self):
+        if not self.game_over:
+            self.all_sprites.update()
+            
+            # Handle bullet collisions
+            for bullet in list(self.bullets):
+                for tetromino in list(self.falling_blocks):
+                    if tetromino.check_collision((bullet.rect.centerx, bullet.rect.centery)):
+                        tetromino.remove_block((bullet.rect.centerx, bullet.rect.centery))
+                        bullet.kill()
+                        self.score += 50
+                        
+                        if not tetromino.has_blocks():
+                            tetromino.kill()
+                        break
+            
+            # Handle tetromino collisions
+            for tetromino in list(self.falling_blocks):
+                if pygame.sprite.collide_rect(self.player, tetromino):
+                    if tetromino.has_blocks():
+                        if not self.add_to_tetris(tetromino):
+                            self.game_over = True
+                        tetromino.kill()
+                        self.score += 200
+                elif tetromino.rect.top > SCREEN_HEIGHT:
+                    if tetromino.has_blocks():
+                        self.game_over = True
+                    tetromino.kill()
+                    break
+
+            # Spawn new tetrominos
+            self.spawn_timer += 1
+            if self.spawn_timer >= 90:  # Adjusted spawn rate
+                self.spawn_tetromino()
+                self.spawn_timer = 0
+    
+    def draw(self):
+        try:
+            self.screen.fill(BLACK)
+            
+            # Draw grid and patterns
+            for y in range(TETRIS_ROWS):
+                for x in range(TETRIS_COLS):
+                    # Grid lines
+                    pygame.draw.rect(self.screen, GRAY,
+                                   (x * GRID_SIZE, y * GRID_SIZE,
+                                    GRID_SIZE, GRID_SIZE), 1)
+                    
+                    # Target pattern
+                    if self.target_pattern[y][x]:
+                        pygame.draw.rect(self.screen, TARGET_COLOR,
+                                       (x * GRID_SIZE, y * GRID_SIZE,
+                                        GRID_SIZE - 1, GRID_SIZE - 1))
+                    
+                    # Placed blocks
+                    if self.tetris_grid[y][x]:
+                        pygame.draw.rect(self.screen, BLUE,
+                                       (x * GRID_SIZE, y * GRID_SIZE,
+                                        GRID_SIZE - 1, GRID_SIZE - 1))
+            
+            # Draw dividing line
+            pygame.draw.line(self.screen, WHITE, (TETRIS_WIDTH, 0), 
+                           (TETRIS_WIDTH, SCREEN_HEIGHT))
+            
+            self.all_sprites.draw(self.screen)
+            
+            # Draw HUD
+            font = pygame.font.Font(None, 36)
+            score_text = font.render(f'Score: {self.score}', True, WHITE)
+            self.screen.blit(score_text, (TETRIS_WIDTH + 10, 10))
+            
+            matches_text = font.render(f'Matches: {self.matches}/{self.total_targets}', 
+                                     True, WHITE)
+            self.screen.blit(matches_text, (TETRIS_WIDTH + 10, 50))
+            
+            if self.game_over:
+                game_over_text = font.render('GAME OVER - Press R to Restart', True, WHITE)
+                self.screen.blit(game_over_text,
+                               (SCREEN_WIDTH//2 - game_over_text.get_width()//2,
+                                SCREEN_HEIGHT//2))
+        except Exception as e:
+            print(f"Error in draw method: {e}")
+
+def main():
+    try:
+        game = Game()
+        game.run()
+    except Exception as e:
+        print(f"Error occurred: {e}")
+    finally:
+        pygame.quit()
+        sys.exit()
+
+if __name__ == "__main__":
+    main()
