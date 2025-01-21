@@ -138,10 +138,10 @@ class Player(pygame.sprite.Sprite):
 class Bullet(pygame.sprite.Sprite):
     def __init__(self, x, y):
         super().__init__()
-        self.image = pygame.Surface((20, 20), pygame.SRCALPHA)  # Wider bullet
+        self.image = pygame.Surface((16, 12), pygame.SRCALPHA)  # Wider bullet
         # Create glowing effect
-        pygame.draw.circle(self.image, PURPLE, (4, 6), 4)  # Outer glow
-        pygame.draw.circle(self.image, WHITE, (4, 6), 2)   # Inner core
+        pygame.draw.circle(self.image, PURPLE, (8, 6), 8)  # Outer glow
+        pygame.draw.circle(self.image, WHITE, (8, 6), 4)   # Inner core
         self.rect = self.image.get_rect()
         self.rect.centerx = x
         self.rect.bottom = y
