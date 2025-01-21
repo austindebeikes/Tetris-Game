@@ -22,23 +22,49 @@ BLUE = (0, 100, 255)
 GRAY = (50, 50, 50)
 TARGET_COLOR = (60, 60, 60)
 
-# Initialize target pattern with proper size checking
-TARGET_PATTERN = [[0 for _ in range(TETRIS_COLS)] for _ in range(TETRIS_ROWS)]
+# Tetromino Shapes with their positions
+SHAPES = [
+    [[1, 1, 1, 1]],  # I
+    [[1, 1], 
+     [1, 1]],  # O
+    [[0, 1, 0], 
+     [1, 1, 1]],  # T
+    [[1, 0, 0], 
+     [1, 1, 1]],  # L
+    [[0, 0, 1], 
+     [1, 1, 1]],  # J
+    [[1, 1, 0], 
+     [0, 1, 1]],  # S
+    [[0, 1, 1], 
+     [1, 1, 0]]   # Z
+]
 
-# Create a simple target pattern
-def create_target_pattern():
-    pattern = [[0 for _ in range(TETRIS_COLS)] for _ in range(TETRIS_ROWS)]
-    # Create a simple tetris shape in the middle
-    middle_col = TETRIS_COLS // 2 - 2
-    # Add an L shape
-    for i in range(4):
-        pattern[10][middle_col + i] = 1  # Horizontal part
-    for i in range(3):
-        pattern[9-i][middle_col] = 1     # Vertical part
-    return pattern
-
-TARGET_PATTERN = create_target_pattern()
+# Initialize empty grids
 DISPLAY_GRID = [[0 for _ in range(TETRIS_COLS)] for _ in range(TETRIS_ROWS)]
+
+def create_target_pattern():
+    # Clear the grid
+    pattern = [[0 for _ in range(TETRIS_COLS)] for _ in range(TETRIS_ROWS)]
+    
+    # Select a random shape
+    shape = random.choice(SHAPES)
+    shape_height = len(shape)
+    shape_width = len(shape[0])
+    
+    # Place in center of top half
+    start_x = TETRIS_COLS // 2 - shape_width // 2
+    start_y = TETRIS_ROWS // 4  # Place in upper part of grid
+    
+    # Place the shape
+    for y in range(shape_height):
+        for x in range(shape_width):
+            if shape[y][x]:
+                pattern[start_y + y][start_x + x] = 1
+                
+    return pattern, shape
+
+# Initialize target pattern
+TARGET_PATTERN, CURRENT_TARGET_SHAPE = create_target_pattern()
 
 class Player(pygame.sprite.Sprite):
     def __init__(self):
@@ -75,24 +101,8 @@ class Bullet(pygame.sprite.Sprite):
 class Tetromino(pygame.sprite.Sprite):
     def __init__(self, x):
         super().__init__()
-        self.SHAPES = [
-            [[1, 1, 1, 1]],  # I
-            [[1, 1], 
-             [1, 1]],  # O
-            [[0, 1, 0], 
-             [1, 1, 1]],  # T
-            [[1, 0, 0], 
-             [1, 1, 1]],  # L
-            [[0, 0, 1], 
-             [1, 1, 1]],  # J
-            [[1, 1, 0], 
-             [0, 1, 1]],  # S
-            [[0, 1, 1], 
-             [1, 1, 0]]   # Z
-        ]
-        
-        self.shape_index = random.randrange(len(self.SHAPES))
-        self.shape = copy.deepcopy(self.SHAPES[self.shape_index])
+        self.shape_index = random.randrange(len(SHAPES))
+        self.shape = copy.deepcopy(SHAPES[self.shape_index])
         self.width = len(self.shape[0]) * GRID_SIZE
         self.height = len(self.shape) * GRID_SIZE
         
@@ -102,7 +112,10 @@ class Tetromino(pygame.sprite.Sprite):
         self.rect = self.image.get_rect()
         self.rect.x = x
         self.rect.y = -self.height
-        self.speed = 3  # Increased speed for better gameplay
+        self.speed = 1.5  # Slowed down speed
+        
+    def matches_target(self):
+        return self.shape == CURRENT_TARGET_SHAPE
         
     def draw_shape(self):
         self.image.fill((0, 0, 0, 0))
@@ -162,8 +175,12 @@ class Game:
         self.game_over = False
         self.spawn_timer = 0
         self.score = 0
-        self.matches = 0
-        self.total_targets = sum(sum(row) for row in TARGET_PATTERN)
+
+    def generate_new_target(self):
+        global TARGET_PATTERN, CURRENT_TARGET_SHAPE
+        TARGET_PATTERN, CURRENT_TARGET_SHAPE = create_target_pattern()
+        self.target_pattern = copy.deepcopy(TARGET_PATTERN)
+        self.tetris_grid = [[0 for _ in range(TETRIS_COLS)] for _ in range(TETRIS_ROWS)]
 
     def run(self):
         running = True
@@ -194,64 +211,35 @@ class Game:
         except ValueError:
             print("Error spawning tetromino: Invalid position calculated")
 
-    def add_to_tetris(self, tetromino):
-        try:
-            shape_height = len(tetromino.shape)
-            shape_width = len(tetromino.shape[0])
-            
-            if shape_width > TETRIS_COLS or shape_height > TETRIS_ROWS:
-                return False
-            
-            # Find empty space from bottom up
-            for base_y in range(TETRIS_ROWS - shape_height, -1, -1):
-                for base_x in range(TETRIS_COLS - shape_width + 1):
-                    if self.can_place_tetromino(tetromino, base_x, base_y):
-                        self.place_tetromino(tetromino, base_x, base_y)
-                        return True
-            
+    def place_tetromino(self, tetromino):
+        if not tetromino.matches_target():
             return False
-        except Exception as e:
-            print(f"Error in add_to_tetris: {e}")
-            return False
-
-    def can_place_tetromino(self, tetromino, base_x, base_y):
-        try:
-            shape_height = len(tetromino.shape)
-            shape_width = len(tetromino.shape[0])
             
-            for y in range(shape_height):
-                for x in range(shape_width):
-                    if tetromino.shape[y][x]:
-                        if (base_y + y >= TETRIS_ROWS or 
-                            base_x + x >= TETRIS_COLS or 
-                            self.tetris_grid[base_y + y][base_x + x]):
-                            return False
-            return True
-        except IndexError:
-            return False
-
-    def place_tetromino(self, tetromino, base_x, base_y):
-        try:
-            shape_height = len(tetromino.shape)
-            shape_width = len(tetromino.shape[0])
-            matches = 0
-            
-            for y in range(shape_height):
-                for x in range(shape_width):
-                    if tetromino.shape[y][x]:
-                        self.tetris_grid[base_y + y][base_x + x] = BLUE
-                        if self.target_pattern[base_y + y][base_x + x]:
-                            matches += 1
-                            self.matches += 1
-            
-            if matches > 0:
-                self.score += matches * 500
-                self.score += 1000  # Bonus for any match
+        shape_height = len(tetromino.shape)
+        shape_width = len(tetromino.shape[0])
+        
+        # Find the target pattern position
+        target_pos = None
+        for y in range(TETRIS_ROWS):
+            for x in range(TETRIS_COLS):
+                if self.target_pattern[y][x]:
+                    target_pos = (x, y)
+                    break
+            if target_pos:
+                break
                 
-            if self.matches >= self.total_targets:
-                self.score += 5000  # Completion bonus
-        except IndexError:
-            print("Error placing tetromino: Index out of range")
+        if target_pos:
+            # Place the matching shape at target position
+            for y in range(shape_height):
+                for x in range(shape_width):
+                    if tetromino.shape[y][x]:
+                        self.tetris_grid[target_pos[1] + y][target_pos[0] + x] = BLUE
+            
+            self.score += 1000  # Bonus for matching shape
+            self.generate_new_target()  # Generate new target
+            return True
+            
+        return False
 
     def update(self):
         if not self.game_over:
@@ -273,19 +261,18 @@ class Game:
             for tetromino in list(self.falling_blocks):
                 if pygame.sprite.collide_rect(self.player, tetromino):
                     if tetromino.has_blocks():
-                        if not self.add_to_tetris(tetromino):
-                            self.game_over = True
-                        tetromino.kill()
-                        self.score += 200
+                        # Only place if it matches the target pattern
+                        if self.place_tetromino(tetromino):
+                            tetromino.kill()
+                            self.score += 200
                 elif tetromino.rect.top > SCREEN_HEIGHT:
                     if tetromino.has_blocks():
                         self.game_over = True
                     tetromino.kill()
-                    break
 
             # Spawn new tetrominos
             self.spawn_timer += 1
-            if self.spawn_timer >= 90:  # Adjusted spawn rate
+            if self.spawn_timer >= 120:  # Adjusted spawn rate
                 self.spawn_tetromino()
                 self.spawn_timer = 0
     
@@ -293,7 +280,7 @@ class Game:
         try:
             self.screen.fill(BLACK)
             
-            # Draw grid and patterns
+            # Draw grid and target pattern
             for y in range(TETRIS_ROWS):
                 for x in range(TETRIS_COLS):
                     # Grid lines
@@ -301,7 +288,7 @@ class Game:
                                    (x * GRID_SIZE, y * GRID_SIZE,
                                     GRID_SIZE, GRID_SIZE), 1)
                     
-                    # Target pattern
+                    # Target pattern (greyed out)
                     if self.target_pattern[y][x]:
                         pygame.draw.rect(self.screen, TARGET_COLOR,
                                        (x * GRID_SIZE, y * GRID_SIZE,
@@ -324,15 +311,12 @@ class Game:
             score_text = font.render(f'Score: {self.score}', True, WHITE)
             self.screen.blit(score_text, (TETRIS_WIDTH + 10, 10))
             
-            matches_text = font.render(f'Matches: {self.matches}/{self.total_targets}', 
-                                     True, WHITE)
-            self.screen.blit(matches_text, (TETRIS_WIDTH + 10, 50))
-            
             if self.game_over:
                 game_over_text = font.render('GAME OVER - Press R to Restart', True, WHITE)
                 self.screen.blit(game_over_text,
                                (SCREEN_WIDTH//2 - game_over_text.get_width()//2,
                                 SCREEN_HEIGHT//2))
+
         except Exception as e:
             print(f"Error in draw method: {e}")
 
